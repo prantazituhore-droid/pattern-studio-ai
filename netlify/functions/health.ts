@@ -1,3 +1,4 @@
+import { hasConfiguredApiKey } from '../../server/gemini';
 import { handlePreflight, jsonResponse } from '../../server/netlifyHttp';
 
 export default async function handler(req: Request): Promise<Response> {
@@ -10,8 +11,8 @@ export default async function handler(req: Request): Promise<Response> {
 
   return jsonResponse({
     ok: true,
-    hasApiKey: Boolean(process.env.GEMINI_API_KEY),
-    vectorModel: 'gemini-4-hydrogen',
+    hasApiKey: hasConfiguredApiKey(),
+    vectorModel: process.env.GEMINI_TEXT_MODEL?.trim() || 'gemini-4-hydrogen',
     rasterModel: 'gemini-3.1-flash-lite-image',
     rasterRequiresPaidKey: true,
     runtime: 'netlify-functions',

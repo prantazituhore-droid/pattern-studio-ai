@@ -7,6 +7,7 @@ import {
   formatGeminiError,
   generateRasterPattern,
   generateVectorPatterns,
+  hasConfiguredApiKey,
   runDesignAssistant,
 } from './server/gemini';
 
@@ -16,22 +17,21 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '15mb' }));
 
-  // Health & capabilities check (never returns secrets)
   app.get('/api/health', (_req, res) => {
     res.json({
       ok: true,
-      hasApiKey: Boolean(process.env.GEMINI_API_KEY),
-      vectorModel: 'gemini-4-hydrogen',
+      hasApiKey: hasConfiguredApiKey(),
+      vectorModel: process.env.GEMINI_TEXT_MODEL?.trim() || 'gemini-4-hydrogen',
       rasterModel: 'gemini-3.1-flash-lite-image',
       rasterRequiresPaidKey: true,
+      runtime: 'express',
     });
   });
 
-  // Enhance user prompt
   app.post('/api/ai/enhance-prompt', async (req, res) => {
     try {
       const { prompt, category, style, mainColor, secondaryColor, backgroundColor } = req.body ?? {};
-      const enhanced = await enhancePatternPrompt({
+      const result = await enhancePatternPrompt({
         prompt: String(prompt ?? ''),
         category: String(category ?? 'Textile and Fabric'),
         style: String(style ?? 'Royal Mughal & Silk Brocade'),
@@ -39,14 +39,13 @@ async function startServer() {
         secondaryColor: String(secondaryColor ?? '#D4AF37'),
         backgroundColor: String(backgroundColor ?? '#0F172A'),
       });
-      res.json({ enhancedPrompt: enhanced, model: 'gemini-4-hydrogen' });
+      res.json(result);
     } catch (err) {
       const formatted = formatGeminiError(err);
       res.status(formatted.status).json({ error: formatted.message });
     }
   });
 
-  // Generate pattern (Vector SVG via Gemini 4 Hydrogen, or Raster Image if paid key is configured)
   app.post('/api/ai/generate-pattern', async (req, res) => {
     try {
       const body = req.body ?? {};
@@ -70,7 +69,7 @@ async function startServer() {
         return;
       }
 
-      const patterns = await generateVectorPatterns({
+      const result = await generateVectorPatterns({
         prompt: body.prompt,
         category: body.category ?? 'Textile and Fabric',
         style: body.style ?? 'Royal Mughal & Silk Brocade',
@@ -92,14 +91,13 @@ async function startServer() {
         referenceImageDataUrl: body.referenceImageDataUrl,
       });
 
-      res.json({ patterns, model: 'gemini-4-hydrogen' });
+      res.json(result);
     } catch (err) {
       const formatted = formatGeminiError(err);
       res.status(formatted.status).json({ error: formatted.message });
     }
   });
 
-  // Conversational AI Design Assistant
   app.post('/api/ai/assistant', async (req, res) => {
     try {
       const { message, canvasSummary, canvasPreviewDataUrl } = req.body ?? {};
@@ -126,7 +124,6 @@ async function startServer() {
     }
   });
 
-  // Vite dev middleware or production static assets
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

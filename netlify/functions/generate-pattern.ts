@@ -36,7 +36,7 @@ export default async function handler(req: Request): Promise<Response> {
       return jsonResponse({ patterns: [result], model: 'gemini-3.1-flash-lite-image' });
     }
 
-    const patterns = await generateVectorPatterns({
+    const result = await generateVectorPatterns({
       prompt,
       category: String(body.category ?? 'Textile and Fabric'),
       style: String(body.style ?? 'Royal Mughal & Silk Brocade'),
@@ -59,7 +59,7 @@ export default async function handler(req: Request): Promise<Response> {
         typeof body.referenceImageDataUrl === 'string' ? body.referenceImageDataUrl : undefined,
     });
 
-    return jsonResponse({ patterns, model: 'gemini-4-hydrogen' });
+    return jsonResponse(result);
   } catch (err) {
     const formatted = formatGeminiError(err);
     return jsonResponse({ error: formatted.message }, formatted.status);

@@ -19,7 +19,7 @@ export default async function handler(req: Request): Promise<Response> {
       backgroundColor?: string;
     }>(req);
 
-    const enhanced = await enhancePatternPrompt({
+    const result = await enhancePatternPrompt({
       prompt: String(body.prompt ?? ''),
       category: String(body.category ?? 'Textile and Fabric'),
       style: String(body.style ?? 'Royal Mughal & Silk Brocade'),
@@ -28,7 +28,7 @@ export default async function handler(req: Request): Promise<Response> {
       backgroundColor: String(body.backgroundColor ?? '#0F172A'),
     });
 
-    return jsonResponse({ enhancedPrompt: enhanced, model: 'gemini-4-hydrogen' });
+    return jsonResponse(result);
   } catch (err) {
     const formatted = formatGeminiError(err);
     return jsonResponse({ error: formatted.message }, formatted.status);

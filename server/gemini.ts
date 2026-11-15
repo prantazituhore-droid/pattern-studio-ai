@@ -1,10 +1,29 @@
-import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel, GenerateContentParameters } from '@google/genai';
+
+const PRIMARY_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL?.trim() || 'gemini-4-hydrogen';
+const PUBLIC_FALLBACK_MODEL = 'gemini-2.5-flash';
+
+const SUPPORTED_RASTER_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+]);
+
+export function getSanitizedApiKey(): string {
+  const raw = process.env.GEMINI_API_KEY ?? '';
+  return raw.trim().replace(/^['"]+|['"]+$/g, '');
+}
+
+export function hasConfiguredApiKey(): boolean {
+  return getSanitizedApiKey().length > 0;
+}
 
 function createClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getSanitizedApiKey();
   if (!apiKey) {
     throw new Error(
-      'GEMINI_API_KEY is not configured. Please add it in Settings > Secrets.'
+      'GEMINI_API_KEY is not configured on the server. Add GEMINI_API_KEY in Netlify Site configuration > Environment variables (Functions scope) or AI Studio Secrets, then redeploy.'
     );
   }
   return new GoogleGenAI({
@@ -25,7 +44,6 @@ function sanitizeSvg(rawSvg: string, width: number, height: number): string {
     throw new Error('Model returned invalid SVG markup.');
   }
   svg = svg.slice(startIdx, endIdx + 6);
-  // Strip any script tags or inline event handlers
   svg = svg
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
     .replace(/\son\w+="[^"]*"/gi, '')
@@ -42,42 +60,151 @@ function sanitizeSvg(rawSvg: string, width: number, height: number): string {
 }
 
 function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!dataUrl || typeof dataUrl !== 'string') return null;
+  const match = dataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
   if (!match) return null;
-  return { mimeType: match[1], data: match[2] };
+  let mimeType = match[1].toLowerCase().trim();
+  if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
+  // Gemini multimodal inlineData only supports raster image MIME types, never image/svg+xml
+  if (!SUPPORTED_RASTER_MIMES.has(mimeType)) {
+    return null;
+  }
+  const data = match[2].replace(/\s+/g, '');
+  if (!data) return null;
+  return { mimeType, data };
+}
+
+function extractReadableErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  // @google/genai often wraps JSON error payloads inside Error.message
+  const jsonStart = raw.indexOf('{');
+  if (jsonStart !== -1) {
+    try {
+      const parsed = JSON.parse(raw.slice(jsonStart)) as {
+        error?: { message?: string; status?: string };
+      };
+      if (parsed?.error?.message) {
+        return parsed.error.message;
+      }
+    } catch {
+      // Fall through to raw string
+    }
+  }
+  return raw;
+}
+
+function shouldFallbackToPublicModel(err: unknown): boolean {
+  const msg = extractReadableErrorMessage(err).toLowerCase();
+  // Never fallback on authentication/key/quota errors
+  if (
+    msg.includes('api_key_invalid') ||
+    msg.includes('api key not valid') ||
+    msg.includes('permission_denied') ||
+    msg.includes('resource_exhausted')
+  ) {
+    return false;
+  }
+  return (
+    msg.includes('not found') ||
+    msg.includes('is not supported') ||
+    msg.includes('not_found') ||
+    msg.includes('thinkinglevel') ||
+    msg.includes('thinking_level') ||
+    msg.includes('thinkingconfig') ||
+    msg.includes('invalid value at \'model\'') ||
+    msg.includes('models/gemini-4')
+  );
+}
+
+async function generateContentWithFallback(
+  ai: GoogleGenAI,
+  request: Omit<GenerateContentParameters, 'model'>,
+  useLowThinking = true
+) {
+  const supportsThinkingLevel =
+    PRIMARY_TEXT_MODEL.startsWith('gemini-3') || PRIMARY_TEXT_MODEL.startsWith('gemini-4');
+
+  const primaryConfig =
+    useLowThinking && supportsThinkingLevel
+      ? {
+          ...request.config,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        }
+      : request.config;
+
+  const attemptCall = async (modelName: string, configObj: GenerateContentParameters['config']) => {
+    try {
+      return await ai.models.generateContent({
+        model: modelName,
+        contents: request.contents,
+        config: configObj,
+      });
+    } catch (err) {
+      const msg = extractReadableErrorMessage(err).toLowerCase();
+      if (msg.includes('503') || msg.includes('unavailable') || msg.includes('high demand')) {
+        await new Promise((r) => setTimeout(r, 800));
+        return await ai.models.generateContent({
+          model: modelName,
+          contents: request.contents,
+          config: configObj,
+        });
+      }
+      throw err;
+    }
+  };
+
+  try {
+    const response = await attemptCall(PRIMARY_TEXT_MODEL, primaryConfig);
+    return { response, model: PRIMARY_TEXT_MODEL };
+  } catch (primaryErr) {
+    if (PRIMARY_TEXT_MODEL !== PUBLIC_FALLBACK_MODEL && shouldFallbackToPublicModel(primaryErr)) {
+      const response = await attemptCall(PUBLIC_FALLBACK_MODEL, request.config);
+      return { response, model: PUBLIC_FALLBACK_MODEL };
+    }
+    throw primaryErr;
+  }
 }
 
 export function formatGeminiError(err: unknown): { status: number; message: string } {
-  const msg = err instanceof Error ? err.message : String(err);
-  if (msg.includes('403') || msg.includes('PERMISSION_DENIED')) {
+  const raw = err instanceof Error ? err.message : String(err);
+  const readable = extractReadableErrorMessage(err);
+  const lower = `${raw} ${readable}`.toLowerCase();
+
+  if (lower.includes('gemini_api_key is not configured')) {
+    return { status: 500, message: readable };
+  }
+  if (lower.includes('api_key_invalid') || lower.includes('api key not valid')) {
+    return {
+      status: 401,
+      message:
+        'Gemini API rejected GEMINI_API_KEY as invalid. Verify the key in Netlify Site configuration > Environment variables (ensure no surrounding quotes, spaces, or HTTP referrer restrictions).',
+    };
+  }
+  if (lower.includes('permission_denied') || lower.includes('403')) {
     return {
       status: 403,
-      message:
-        'Permission denied by Gemini API. Check your API key permissions or billing tier in Settings > Secrets.',
+      message: `Gemini API permission denied: ${readable}`,
     };
   }
-  if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
+  if (lower.includes('resource_exhausted') || lower.includes('429')) {
     return {
       status: 429,
-      message:
-        'Gemini API quota reached or this model requires a billing-enabled key in Settings > Secrets.',
+      message: `Gemini API quota or billing limit reached: ${readable}`,
     };
   }
-  if (msg.includes('400') || msg.includes('API_KEY_INVALID')) {
-    return {
-      status: 400,
-      message:
-        'Invalid request or API key error from Gemini API. Check Settings > Secrets.',
-    };
-  }
-  if (msg.includes('404') || msg.includes('NOT_FOUND')) {
+  if (lower.includes('not_found') || lower.includes('404')) {
     return {
       status: 404,
-      message:
-        'The requested Gemini model is unavailable for the current API key configuration.',
+      message: `Requested Gemini model unavailable: ${readable}`,
     };
   }
-  return { status: 500, message: msg || 'Unexpected AI service error.' };
+  if (lower.includes('invalid_argument') || lower.includes('400')) {
+    return {
+      status: 400,
+      message: `Gemini API request rejected: ${readable}`,
+    };
+  }
+  return { status: 500, message: readable || 'Unexpected AI service error.' };
 }
 
 export async function enhancePatternPrompt(input: {
@@ -89,24 +216,20 @@ export async function enhancePatternPrompt(input: {
   backgroundColor: string;
 }) {
   const ai = createClient();
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
+  const { response, model } = await generateContentWithFallback(ai, {
     contents: `Transform the user's brief pattern idea into a rich, production-grade surface & textile pattern design prompt (2-3 crisp sentences, no markdown, no bullets).
 User brief: "${input.prompt || 'Luxury botanical motif'}"
 Category: ${input.category}
 Style: ${input.style}
 Colors: primary ${input.mainColor}, secondary ${input.secondaryColor}, background ${input.backgroundColor}.
 Specify motif anatomy, symmetry, line quality, spacing, and tactile fabric/surface inspiration.`,
-    config: {
-      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-    },
   });
 
   const enhanced = response.text?.trim();
   if (!enhanced) {
     throw new Error('Could not generate an enhanced prompt.');
   }
-  return enhanced;
+  return { enhancedPrompt: enhanced, model };
 }
 
 export async function generateVectorPatterns(params: {
@@ -172,12 +295,10 @@ ${params.referenceImageDataUrl ? 'Analyze the attached reference image for motif
   }
   parts.push({ text: textPrompt });
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
+  const { response, model } = await generateContentWithFallback(ai, {
     contents: { parts },
     config: {
       systemInstruction,
-      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -224,7 +345,7 @@ ${params.referenceImageDataUrl ? 'Analyze the attached reference image for motif
     throw new Error('No pattern variations were produced.');
   }
 
-  return parsed.variations.slice(0, count).map((item, idx) => {
+  const patterns = parsed.variations.slice(0, count).map((item, idx) => {
     const cleanSvg = sanitizeSvg(item.svgMarkup, w, h);
     const dataUrl = `data:image/svg+xml;base64,${Buffer.from(cleanSvg, 'utf-8').toString('base64')}`;
     return {
@@ -243,6 +364,8 @@ ${params.referenceImageDataUrl ? 'Analyze the attached reference image for motif
       height: h,
     };
   });
+
+  return { patterns, model };
 }
 
 export async function generateRasterPattern(params: {
@@ -347,12 +470,10 @@ Current canvas state:
 ${JSON.stringify(input.canvasSummary, null, 2)}`,
   });
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
+  const { response } = await generateContentWithFallback(ai, {
     contents: { parts },
     config: {
       systemInstruction,
-      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -406,7 +527,6 @@ ${JSON.stringify(input.canvasSummary, null, 2)}`,
     throw new Error('Assistant returned an empty response.');
   }
   const parsed = JSON.parse(text);
-  // Sanitize any add_svg_motif svgMarkup
   if (Array.isArray(parsed.operations)) {
     parsed.operations = parsed.operations.map((op: Record<string, unknown>) => {
       if (op.type === 'add_svg_motif' && typeof op.svgMarkup === 'string') {

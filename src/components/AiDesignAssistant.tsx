@@ -86,6 +86,10 @@ export const AiDesignAssistant: React.FC<AiDesignAssistantProps> = ({
 
     try {
       const snap = getCanvasSummary();
+      const previewUrl =
+        snap?.thumbnailDataUrl && !snap.thumbnailDataUrl.startsWith('data:image/svg+xml')
+          ? snap.thumbnailDataUrl
+          : undefined;
       const res = await fetch('/api/ai/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,7 +103,7 @@ export const AiDesignAssistant: React.FC<AiDesignAssistantProps> = ({
             objects: [],
             palette: [],
           },
-          canvasPreviewDataUrl: snap?.thumbnailDataUrl,
+          canvasPreviewDataUrl: previewUrl,
         }),
       });
       const data = await res.json();
