@@ -1,0 +1,6 @@
+{
+  "name": "Pattern Studio AI",
+  "description": "AI-powered graphic pattern generator, professional layered canvas editor, seamless repeat studio, color palette system, and product mockup generator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
