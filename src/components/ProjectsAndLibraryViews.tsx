@@ -884,7 +884,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="mt-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
               {serverHealth?.hasApiKey
                 ? 'Configured via server-side GEMINI_API_KEY'
-                : 'Waiting for GEMINI_API_KEY in Settings > Secrets'}
+                : 'Add GEMINI_API_KEY in server Environment Variables / Secrets'}
             </div>
           </div>
           <div className="p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
@@ -895,7 +895,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {serverHealth?.rasterModel ?? 'gemini-3.1-flash-lite-image'}
             </div>
             <div className="mt-1.5 text-zinc-500">
-              Requires a billing-enabled Gemini API key in Settings &gt; Secrets.
+              Requires a billing-enabled GEMINI_API_KEY configured on the server.
             </div>
           </div>
         </div>

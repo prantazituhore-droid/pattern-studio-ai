@@ -1,4 +1,8 @@
 import { StudioTemplate } from '../types/studio';
+import royalFloralSilkImg from '../assets/images/template_royal_floral_silk_1794759415067.jpg';
+import islamicGeometricImg from '../assets/images/template_islamic_geometric_1794759415912.jpg';
+import minimalTerrazzoImg from '../assets/images/template_minimal_terrazzo_1794759416639.jpg';
+import vintageBotanicalImg from '../assets/images/template_vintage_botanical_1794759416493.jpg';
 
 function svgToDataUrl(svg: string): string {
   return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
@@ -119,7 +123,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     category: 'Saree Design',
     style: 'Royal Mughal & Silk Brocade',
     description: 'Symmetrical golden botanical foliage and lotus blossoms on emerald silk.',
-    imageUrl: '/src/assets/images/template_royal_floral_silk_1794759415067.jpg',
+    imageUrl: royalFloralSilkImg,
     isVector: false,
     palette: ['#064E3B', '#D4AF37', '#FDE68A', '#991B1B'],
     backgroundColor: '#064E3B',
@@ -133,7 +137,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     category: 'Islamic Art',
     style: 'Islamic Girih Tessellation',
     description: '8-pointed geometric star tessellation with turquoise ceramic accents.',
-    imageUrl: '/src/assets/images/template_islamic_geometric_1794759415912.jpg',
+    imageUrl: islamicGeometricImg,
     isVector: false,
     palette: ['#0F172A', '#D4AF37', '#06B6D4', '#F8FAFC'],
     backgroundColor: '#0F172A',
@@ -147,7 +151,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     category: 'Modern Patterns',
     style: 'Geometric Bauhaus',
     description: 'Architectural stone base with cobalt arcs, lavender dots, and charcoal geometry.',
-    imageUrl: '/src/assets/images/template_minimal_terrazzo_1794759416639.jpg',
+    imageUrl: minimalTerrazzoImg,
     isVector: false,
     palette: ['#F5F5F4', '#2563EB', '#A78BFA', '#27272A'],
     backgroundColor: '#F5F5F4',
@@ -161,7 +165,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     category: 'Wallpaper',
     style: 'Heritage Arts & Crafts',
     description: 'Classic Arts & Crafts intertwining sage acanthus foliage on warm parchment.',
-    imageUrl: '/src/assets/images/template_vintage_botanical_1794759416493.jpg',
+    imageUrl: vintageBotanicalImg,
     isVector: false,
     palette: ['#FEF3C7', '#65A30D', '#B45309', '#27272A'],
     backgroundColor: '#F5EFE0',

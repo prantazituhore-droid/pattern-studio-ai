@@ -109,7 +109,26 @@ export const AiPatternGenerator: React.FC<AiPatternGeneratorProps> = ({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      updateParam('referenceImageDataUrl', String(reader.result));
+      const rawUrl = String(reader.result);
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1024;
+        const scale = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1));
+        const w = Math.max(1, Math.round((img.width || maxDim) * scale));
+        const h = Math.max(1, Math.round((img.height || maxDim) * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          updateParam('referenceImageDataUrl', canvas.toDataURL('image/jpeg', 0.86));
+        } else {
+          updateParam('referenceImageDataUrl', rawUrl);
+        }
+      };
+      img.onerror = () => updateParam('referenceImageDataUrl', rawUrl);
+      img.src = rawUrl;
     };
     reader.readAsDataURL(file);
     e.target.value = '';

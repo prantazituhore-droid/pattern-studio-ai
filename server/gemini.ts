@@ -177,7 +177,7 @@ ${params.referenceImageDataUrl ? 'Analyze the attached reference image for motif
     contents: { parts },
     config: {
       systemInstruction,
-      thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
